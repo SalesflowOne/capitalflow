@@ -11,7 +11,7 @@ services:
       - bash
       - '-c'
     command:
-      - "ls -1 apps > sites/apps.txt; bench set-config -g db_host db; bench set-config -gp db_port 3306; bench set-config -g redis_cache redis://redis-cache:6379; bench set-config -g redis_queue redis://redis-queue:6379; bench set-config -g redis_socketio redis://redis-queue:6379; bench set-config -gp socketio_port 9000; echo \"Configuration Complete\";\n"
+      - "ls -1 apps > sites/apps.txt; bench set-config -g db_host db; bench set-config -gp db_port 3306; bench set-config -g redis_cache redis://redis:6379; bench set-config -g redis_queue redis://redis:6379; bench set-config -g redis_socketio redis://redis:6379; bench set-config -gp socketio_port 9000; echo \"Configuration Complete\";\n"
     volumes:
       - 'sites:/home/frappe/frappe-bench/sites'
       - 'logs:/home/frappe/frappe-bench/logs'
@@ -32,11 +32,13 @@ services:
       - bash
       - '-c'
     command:
-      - "wait-for-it -t 120 db:3306; wait-for-it -t 120 redis-cache:6379; if [ ! -d \"sites/$${SITE_NAME}\" ]; then\n  echo \"Site $${SITE_NAME} does not exist. Creating now...\";\n  bench new-site \"$${SITE_NAME}\" \\\n    --mariadb-root-password \"$${DB_ROOT_PASSWORD}\" \\\n    --db-root-username \"root\" \\\n    --admin-password \"$${ADMIN_PASSWORD}\" \\\n    --mariadb-user-host-login-scope '%' \\\n    --install-app erpnext \\\n    --install-app lending \\\n    --set-default;\n  echo \"Site created successfully.\";\nelse\n  echo \"Site $${SITE_NAME} already exists. Skipping creation.\";\nfi\n"
+      - "wait-for-it -t 120 db:3306; wait-for-it -t 120 redis:6379; if [ ! -d \"sites/$${SITE_NAME}\" ]; then\n  echo \"Site $${SITE_NAME} does not exist. Creating now...\";\n  bench new-site \"$${SITE_NAME}\" \\\n    --mariadb-root-password \"$${DB_ROOT_PASSWORD}\" \\\n    --db-root-username \"root\" \\\n    --admin-password \"$${ADMIN_PASSWORD}\" \\\n    --mariadb-user-host-login-scope '%' \\\n    --install-app erpnext \\\n    --install-app lending \\\n    --set-default;\n  echo \"Site created successfully.\";\nelse\n  echo \"Site $${SITE_NAME} already exists. Skipping creation.\";\nfi\n"
     depends_on:
       configure:
         condition: service_completed_successfully
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   backend:
@@ -49,7 +51,7 @@ services:
       - -b
       - 0.0.0.0:8000
       - -w
-      - '2'
+      - '1'
       - -t
       - '120'
       - frappe.app:application
@@ -58,14 +60,10 @@ services:
       - 'sites:/home/frappe/frappe-bench/sites'
       - 'logs:/home/frappe/frappe-bench/logs'
     depends_on:
-      configure:
+      create-site:
         condition: service_completed_successfully
-      db:
+      redis:
         condition: service_healthy
-      redis-cache:
-        condition: service_started
-      redis-queue:
-        condition: service_started
 
   frontend:
     image: capitalflow-frappe:${FRAPPE_VERSION:-develop}
@@ -114,10 +112,10 @@ services:
       - 'sites:/home/frappe/frappe-bench/sites'
       - 'logs:/home/frappe/frappe-bench/logs'
     depends_on:
-      configure:
+      create-site:
         condition: service_completed_successfully
 
-  queue-long:
+  worker:
     image: capitalflow-frappe:${FRAPPE_VERSION:-develop}
     deploy:
       restart_policy:
@@ -131,24 +129,7 @@ services:
       - 'sites:/home/frappe/frappe-bench/sites'
       - 'logs:/home/frappe/frappe-bench/logs'
     depends_on:
-      configure:
-        condition: service_completed_successfully
-
-  queue-short:
-    image: capitalflow-frappe:${FRAPPE_VERSION:-develop}
-    deploy:
-      restart_policy:
-        condition: on-failure
-    command:
-      - bench
-      - worker
-      - '--queue'
-      - 'short,default'
-    volumes:
-      - 'sites:/home/frappe/frappe-bench/sites'
-      - 'logs:/home/frappe/frappe-bench/logs'
-    depends_on:
-      configure:
+      create-site:
         condition: service_completed_successfully
 
   scheduler:
@@ -163,7 +144,7 @@ services:
       - 'sites:/home/frappe/frappe-bench/sites'
       - 'logs:/home/frappe/frappe-bench/logs'
     depends_on:
-      configure:
+      create-site:
         condition: service_completed_successfully
 
   db:
@@ -173,7 +154,7 @@ services:
       - '--collation-server=utf8mb4_unicode_ci'
       - '--skip-character-set-client-handshake'
       - '--skip-innodb-read-only-compressed'
-      - '--innodb-buffer-pool-size=256M'
+      - '--innodb-buffer-pool-size=128M'
     environment:
       MYSQL_ROOT_PASSWORD: '${SERVICE_PASSWORD_DB}'
       MARIADB_ROOT_PASSWORD: '${SERVICE_PASSWORD_DB}'
@@ -190,28 +171,12 @@ services:
       interval: 5s
       retries: 20
 
-  redis-cache:
+  redis:
     image: '${REDIS_IMAGE:-redis:6.2-alpine}'
     command:
       - redis-server
       - '--maxmemory'
-      - 128mb
-      - '--maxmemory-policy'
-      - allkeys-lru
-    healthcheck:
-      test:
-        - CMD
-        - redis-cli
-        - ping
-      interval: 5s
-      retries: 5
-
-  redis-queue:
-    image: '${REDIS_IMAGE:-redis:6.2-alpine}'
-    command:
-      - redis-server
-      - '--maxmemory'
-      - 128mb
+      - 96mb
       - '--maxmemory-policy'
       - allkeys-lru
     healthcheck:
