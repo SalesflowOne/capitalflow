@@ -25,7 +25,7 @@ services:
       - 'sites:/home/frappe/frappe-bench/sites'
       - 'logs:/home/frappe/frappe-bench/logs'
     environment:
-      SITE_NAME: '${SITE_NAME}'
+      SITE_NAME: '${SERVICE_FQDN_FRONTEND}'
       ADMIN_PASSWORD: '${SERVICE_PASSWORD_ADMIN}'
       DB_ROOT_PASSWORD: '${SERVICE_PASSWORD_DB}'
     entrypoint:
