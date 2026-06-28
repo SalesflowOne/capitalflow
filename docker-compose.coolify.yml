@@ -85,6 +85,19 @@ services:
     volumes:
       - 'sites:/home/frappe/frappe-bench/sites'
       - 'logs:/home/frappe/frappe-bench/logs'
+    labels:
+      - traefik.enable=true
+      - traefik.http.middlewares.capitalflow-gzip.compress=true
+      - traefik.http.middlewares.capitalflow-redirect.redirectscheme.scheme=https
+      - traefik.http.routers.capitalflow-http.rule=Host(`${SERVICE_FQDN_FRONTEND}`)
+      - traefik.http.routers.capitalflow-http.entryPoints=http
+      - traefik.http.routers.capitalflow-http.middlewares=capitalflow-redirect
+      - traefik.http.routers.capitalflow-https.rule=Host(`${SERVICE_FQDN_FRONTEND}`)
+      - traefik.http.routers.capitalflow-https.entryPoints=https
+      - traefik.http.routers.capitalflow-https.tls=true
+      - traefik.http.routers.capitalflow-https.tls.certresolver=letsencrypt
+      - traefik.http.routers.capitalflow-https.middlewares=capitalflow-gzip
+      - traefik.http.services.capitalflow.loadbalancer.server.port=8080
     depends_on:
       backend:
         condition: service_started
