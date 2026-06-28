@@ -32,7 +32,24 @@ services:
       - bash
       - '-c'
     command:
-      - "wait-for-it -t 120 db:3306; wait-for-it -t 120 redis:6379; if [ ! -d \"sites/$${SITE_NAME}\" ]; then\n  echo \"Site $${SITE_NAME} does not exist. Creating now...\";\n  bench new-site \"$${SITE_NAME}\" \\\n    --mariadb-root-password \"$${DB_ROOT_PASSWORD}\" \\\n    --db-root-username \"root\" \\\n    --admin-password \"$${ADMIN_PASSWORD}\" \\\n    --mariadb-user-host-login-scope '%' \\\n    --install-app erpnext \\\n    --install-app lending \\\n    --set-default;\n  echo \"Site created successfully.\";\nelse\n  echo \"Site $${SITE_NAME} already exists. Skipping creation.\";\nfi\n"
+      - |
+        wait-for-it -t 120 db:3306
+        wait-for-it -t 120 redis:6379
+        if [ ! -f "sites/$${SITE_NAME}/site_config.json" ]; then
+          rm -rf "sites/$${SITE_NAME}"
+          echo "Site $${SITE_NAME} does not exist. Creating now..."
+          bench new-site "$${SITE_NAME}" \
+            --mariadb-root-password "$${DB_ROOT_PASSWORD}" \
+            --db-root-username "root" \
+            --admin-password "$${ADMIN_PASSWORD}" \
+            --mariadb-user-host-login-scope '%' \
+            --install-app erpnext \
+            --install-app lending \
+            --set-default
+          echo "Site created successfully."
+        else
+          echo "Site $${SITE_NAME} already exists. Skipping creation."
+        fi
     depends_on:
       configure:
         condition: service_completed_successfully
@@ -55,7 +72,6 @@ services:
       - -t
       - '120'
       - frappe.app:application
-      - --preload
     volumes:
       - 'sites:/home/frappe/frappe-bench/sites'
       - 'logs:/home/frappe/frappe-bench/logs'
@@ -99,53 +115,6 @@ services:
     depends_on:
       backend:
         condition: service_started
-
-  websocket:
-    image: capitalflow-frappe:${FRAPPE_VERSION:-develop}
-    deploy:
-      restart_policy:
-        condition: on-failure
-    command:
-      - node
-      - /home/frappe/frappe-bench/apps/frappe/socketio.js
-    volumes:
-      - 'sites:/home/frappe/frappe-bench/sites'
-      - 'logs:/home/frappe/frappe-bench/logs'
-    depends_on:
-      create-site:
-        condition: service_completed_successfully
-
-  worker:
-    image: capitalflow-frappe:${FRAPPE_VERSION:-develop}
-    deploy:
-      restart_policy:
-        condition: on-failure
-    command:
-      - bench
-      - worker
-      - '--queue'
-      - 'long,default,short'
-    volumes:
-      - 'sites:/home/frappe/frappe-bench/sites'
-      - 'logs:/home/frappe/frappe-bench/logs'
-    depends_on:
-      create-site:
-        condition: service_completed_successfully
-
-  scheduler:
-    image: capitalflow-frappe:${FRAPPE_VERSION:-develop}
-    deploy:
-      restart_policy:
-        condition: on-failure
-    command:
-      - bench
-      - schedule
-    volumes:
-      - 'sites:/home/frappe/frappe-bench/sites'
-      - 'logs:/home/frappe/frappe-bench/logs'
-    depends_on:
-      create-site:
-        condition: service_completed_successfully
 
   db:
     image: '${MARIADB_IMAGE:-mariadb:10.6}'
